@@ -66,6 +66,24 @@ app.get('/conv/:rubriqueId', (req, res) => {
   });
 });
 
+app.get('/conversation/:room', (req, res) => {
+    // res.send('Hello tata');
+  const room = req.params.room;
+//   console.log(req.params);
+//   res.send(req.params);
+  const sql = 'SELECT * FROM conv WHERE id_conv = ?';
+
+  connection.query(sql, [room], (error, results, fields) => {
+      if (error) {
+          res.status(500).json({ error: 'Internal Server Error' });
+      } else {
+          res.json(results[0]); // Si vous vous attendez à un seul résultat, envoyez seulement le premier élément du tableau des résultats
+      }
+  });
+});
+
+
+
 app.get('/message/:id_conv', (req, res) => {
   const id_conv = req.params.id_conv;
   const sql = 'SELECT * FROM message WHERE id_conv = ?';
@@ -82,26 +100,40 @@ app.get('/message/:id_conv', (req, res) => {
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
-  
-  // Lorsqu'un utilisateur rejoint une salle
-  socket.on('join_room', (data) => {
-      const { sujet, room, title } = data;
+ 
+  socket.on('join_room', async (data) => {
+      const { sujet, title, username } = data;
+      
+      // Enregistrez le sujet et le titre dans la base de données
+      const insertSql = 'INSERT INTO conv (id_sujet, conv_title) VALUES (?, ?)';
+      const insertValues = [sujet, title];
+      try {
+          const insertResult = await new Promise((resolve, reject) => {
+              connection.query(insertSql, insertValues, (error, results, fields) => {
+                  if (error) {
+                      reject(error);
+                  } else {
+                      resolve(results);
+                  }
+              });
+          });
+          
+          const id_conv = insertResult.insertId;
+          
+          console.log(`User ${socket.id} joined room ${id_conv}`);
+          socket.join(id_conv.toString()); // Rejoignez l'utilisateur à la salle
 
-      // Enregistrez la connexion de l'utilisateur dans la base de données
-      const sql = 'INSERT INTO conv (id_sujet, conv_title) VALUES (?, ?)';
-      const values = [sujet, title];
-      connection.query(sql, values, (error, results, fields) => {
-          if (error) {
-              console.error(error);
-          } else {
-              console.log(`User ${socket.id} joined room ${room}`);
-              socket.join(room); // Rejoignez l'utilisateur à la salle
-          }
-      });
+          // Émettez un message avec la valeur de la room
+          socket.emit('room_joined', { room: id_conv.toString() });
+          
+      } catch (error) {
+          console.error(error);
+      }
   });
-
-  // Gérez d'autres événements ici (envoi de messages, déconnexion, etc.)
 });
+
+
+
 
 
 server.listen(4000, () => {
